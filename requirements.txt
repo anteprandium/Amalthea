@@ -1,0 +1,4 @@
+pyobjc-core>=10,<11
+pyobjc-framework-Cocoa>=10,<11
+pyobjc-framework-WebKit>=10,<11
+pyinstaller>=6,<7
