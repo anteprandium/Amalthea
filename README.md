@@ -9,6 +9,25 @@ It is intentionally document-centric:
 - native macOS menus for the important actions
 - minimal embedded Jupyter chrome
 
+## What It Is
+
+Amalthea is for people who want to work with Sage notebooks as native macOS
+documents instead of as tabs inside a general-purpose browser or JupyterLab
+workspace.
+
+It keeps the app small by relying on:
+
+- AppKit for windows and menus
+- `WKWebView` for notebook rendering
+- an external SageMath installation for the kernel and Jupyter server
+
+## What It Is Not
+
+- not a bundled Sage distribution
+- not a full JupyterLab desktop shell
+- not a cross-platform application
+- not intended for large-scale multi-document session management
+
 ## Requirements
 
 - macOS on Apple Silicon
@@ -31,6 +50,12 @@ This produces:
 dist/Amalthea.app
 ```
 
+For direct development launch:
+
+```sh
+.venv/bin/python Amalthea.py
+```
+
 To deploy the freshly built app to `/Applications` on a personal machine:
 
 ```sh
@@ -47,10 +72,12 @@ artifacts afterward.
   rather than JupyterLab workspace routes.
 - Non-notebook navigations are handed off to the system browser.
 - The app owns `.ipynb` documents in the packaged bundle metadata.
+- The active packaging route is PyInstaller.
 
 ## Authorship
 
-Amalthea was originally designed and developed in PyQt and PySide by its repository author.
+Amalthea was originally designed and developed in PyQt and PySide by its
+repository author.
 
 The current native macOS PyObjC/AppKit/`WKWebView` port, packaging, and
 integration work were co-developed with OpenAI Codex.
