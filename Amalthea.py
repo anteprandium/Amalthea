@@ -8,7 +8,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 import objc
 from AppKit import (
@@ -632,6 +632,32 @@ class NotebookWindow(NSObject):
         candidate = self._url_string(url)
         return bool(base_url) and candidate.startswith(f"{base_url}notebooks/")
 
+    def _external_url(self, url):
+        if self.app is None or self.app.server is None:
+            return url
+        base_url = self.app.server.url or ""
+        token = self.app.server.token or ""
+        candidate = self._url_string(url)
+        if not base_url or not token or not candidate.startswith(base_url):
+            return url
+
+        parts = urlsplit(candidate)
+        query_items = parse_qsl(parts.query, keep_blank_values=True)
+        if any(key == "token" for key, _value in query_items):
+            return url
+        query_items.append(("token", token))
+        return NSURL.URLWithString_(
+            urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    parts.path,
+                    urlencode(query_items),
+                    parts.fragment,
+                )
+            )
+        )
+
     def applyPageZoom_(self, factor: float) -> None:
         if self.web_view.respondsToSelector_(b"setPageZoom:"):
             self.web_view.setPageZoom_(clamp_page_zoom(factor))
@@ -713,7 +739,7 @@ class NotebookWindow(NSObject):
             decision_handler(WKNavigationActionPolicyAllow)
             return
 
-        NSWorkspace.sharedWorkspace().openURL_(target_url)
+        NSWorkspace.sharedWorkspace().openURL_(self._external_url(target_url))
         decision_handler(WKNavigationActionPolicyCancel)
 
     def webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(
@@ -730,7 +756,7 @@ class NotebookWindow(NSObject):
             return None
 
         if target_url is not None and not self._is_managed_notebook_url(target_url):
-            NSWorkspace.sharedWorkspace().openURL_(target_url)
+            NSWorkspace.sharedWorkspace().openURL_(self._external_url(target_url))
             return None
 
         notebook = self.app.createNotebookWindow()
