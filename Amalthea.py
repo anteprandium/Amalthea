@@ -630,7 +630,7 @@ class NotebookWindow(NSObject):
             return False
         base_url = self.app.server.url or ""
         candidate = self._url_string(url)
-        return bool(base_url) and candidate.startswith(base_url)
+        return bool(base_url) and candidate.startswith(f"{base_url}notebooks/")
 
     def applyPageZoom_(self, factor: float) -> None:
         if self.web_view.respondsToSelector_(b"setPageZoom:"):
