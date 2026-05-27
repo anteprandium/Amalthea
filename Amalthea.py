@@ -418,6 +418,9 @@ class NotebookWindow(NSObject):
     app = objc.ivar()
 
     def initWithApp_(self, app):
+        return self.initWithApp_configuration_(app, None)
+
+    def initWithApp_configuration_(self, app, web_view_configuration):
         self = objc.super(NotebookWindow, self).init()
         if self is None:
             return None
@@ -433,8 +436,10 @@ class NotebookWindow(NSObject):
         self.window.setDelegate_(self)
         self.window.center()
 
-        configuration = WKWebViewConfiguration.alloc().init()
-        controller = WKUserContentController.alloc().init()
+        configuration = web_view_configuration or WKWebViewConfiguration.alloc().init()
+        controller = configuration.userContentController()
+        if controller is None:
+            controller = WKUserContentController.alloc().init()
         controller.addUserScript_(
             WKUserScript.alloc().initWithSource_injectionTime_forMainFrameOnly_(
                 """
@@ -759,7 +764,7 @@ class NotebookWindow(NSObject):
             NSWorkspace.sharedWorkspace().openURL_(self._external_url(target_url))
             return None
 
-        notebook = self.app.createNotebookWindow()
+        notebook = self.app.createNotebookWindow(configuration)
         notebook.show()
         return notebook.web_view
 
@@ -978,8 +983,8 @@ class Amalthea(NSObject):
         )
         return False
 
-    def createNotebookWindow(self) -> NotebookWindow:
-        notebook = NotebookWindow.alloc().initWithApp_(self)
+    def createNotebookWindow(self, configuration=None) -> NotebookWindow:
+        notebook = NotebookWindow.alloc().initWithApp_configuration_(self, configuration)
         self.documents.addObject_(notebook)
         return notebook
 
