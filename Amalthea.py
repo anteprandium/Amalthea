@@ -72,6 +72,11 @@ WINDOW_STYLE_MASK = (
 
 SAGE_LOCATION = "/usr/local/bin/sage"
 WINDOW_DEFAULTS_KEY = "Anteprandium.Amalthea.MainWindowSize"
+PAGE_ZOOM_DEFAULTS_KEY = "Anteprandium.Amalthea.PageZoom"
+PAGE_ZOOM_DEFAULT = 1.15
+PAGE_ZOOM_MIN = 0.8
+PAGE_ZOOM_MAX = 1.6
+PAGE_ZOOM_STEP = 0.1
 CONSOLE_HANDLER_NAME = "amaltheaConsole"
 
 
@@ -94,6 +99,26 @@ def looks_like_notebook(path: str) -> bool:
 
 def make_name(index: int) -> str:
     return "Untitled.ipynb" if index == 0 else f"Untitled{index}.ipynb"
+
+
+def clamp_page_zoom(value: float) -> float:
+    return max(PAGE_ZOOM_MIN, min(PAGE_ZOOM_MAX, value))
+
+
+def load_page_zoom() -> float:
+    raw = NSUserDefaults.standardUserDefaults().stringForKey_(PAGE_ZOOM_DEFAULTS_KEY)
+    if not raw:
+        return PAGE_ZOOM_DEFAULT
+    try:
+        return clamp_page_zoom(float(raw))
+    except ValueError:
+        return PAGE_ZOOM_DEFAULT
+
+
+def save_page_zoom(value: float) -> None:
+    NSUserDefaults.standardUserDefaults().setObject_forKey_(
+        f"{clamp_page_zoom(value):.2f}", PAGE_ZOOM_DEFAULTS_KEY
+    )
 
 
 def discover_sage_kernel_spec() -> dict[str, str]:
@@ -567,6 +592,7 @@ class NotebookWindow(NSObject):
         self.web_view.setNavigationDelegate_(self)
         self.web_view.setUIDelegate_(self)
         self.web_view.setAutoresizingMask_(NSViewWidthSizable | NSViewHeightSizable)
+        self.applyPageZoom_(load_page_zoom())
         self.window.setContentView_(self.web_view)
         return self
 
@@ -605,6 +631,12 @@ class NotebookWindow(NSObject):
         base_url = self.app.server.url or ""
         candidate = self._url_string(url)
         return bool(base_url) and candidate.startswith(base_url)
+
+    def applyPageZoom_(self, factor: float) -> None:
+        if self.web_view.respondsToSelector_(b"setPageZoom:"):
+            self.web_view.setPageZoom_(clamp_page_zoom(factor))
+        else:
+            print("WKWebView pageZoom is not available in this WebKit bridge.", file=sys.stderr)
 
     def runNotebookJavaScript_(self, script: str) -> None:
         self.web_view.evaluateJavaScript_completionHandler_(script, None)
@@ -1043,6 +1075,22 @@ class Amalthea(NSObject):
     def showNotebookShortcuts_(self, sender) -> None:
         self._dispatch_notebook_action(b"showNotebookShortcuts:", sender)
 
+    def _setPageZoom(self, factor: float) -> None:
+        factor = clamp_page_zoom(factor)
+        save_page_zoom(factor)
+        for notebook in self.documents:
+            if notebook.window is not None and notebook.window.isVisible():
+                notebook.applyPageZoom_(factor)
+
+    def zoomIn_(self, sender) -> None:
+        self._setPageZoom(load_page_zoom() + PAGE_ZOOM_STEP)
+
+    def zoomOut_(self, sender) -> None:
+        self._setPageZoom(load_page_zoom() - PAGE_ZOOM_STEP)
+
+    def actualSize_(self, sender) -> None:
+        self._setPageZoom(1.0)
+
     def cutCell_(self, sender) -> None:
         self._dispatch_notebook_action(b"cutCell:", sender)
 
@@ -1175,6 +1223,16 @@ class Amalthea(NSObject):
             "l",
             NSEventModifierFlagCommand | NSEventModifierFlagOption,
             self,
+        )
+        view_menu.addItem_(NSMenuItem.separatorItem())
+        self.addMenuItem_title_action_key_modifiers_target_(
+            view_menu, "Zoom In", b"zoomIn:", "=", NSEventModifierFlagCommand, self
+        )
+        self.addMenuItem_title_action_key_modifiers_target_(
+            view_menu, "Zoom Out", b"zoomOut:", "-", NSEventModifierFlagCommand, self
+        )
+        self.addMenuItem_title_action_key_modifiers_target_(
+            view_menu, "Actual Size", b"actualSize:", "0", NSEventModifierFlagCommand, self
         )
         view_menu.addItem_(NSMenuItem.separatorItem())
         self.addMenuItem_title_action_key_modifiers_target_(
