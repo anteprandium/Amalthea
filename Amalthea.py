@@ -1075,7 +1075,7 @@ class Amalthea(NSObject):
     def showNotebookShortcuts_(self, sender) -> None:
         self._dispatch_notebook_action(b"showNotebookShortcuts:", sender)
 
-    def _setPageZoom(self, factor: float) -> None:
+    def set_page_zoom(self, factor: float) -> None:
         factor = clamp_page_zoom(factor)
         save_page_zoom(factor)
         for notebook in self.documents:
@@ -1083,13 +1083,13 @@ class Amalthea(NSObject):
                 notebook.applyPageZoom_(factor)
 
     def zoomIn_(self, sender) -> None:
-        self._setPageZoom(load_page_zoom() + PAGE_ZOOM_STEP)
+        self.set_page_zoom(load_page_zoom() + PAGE_ZOOM_STEP)
 
     def zoomOut_(self, sender) -> None:
-        self._setPageZoom(load_page_zoom() - PAGE_ZOOM_STEP)
+        self.set_page_zoom(load_page_zoom() - PAGE_ZOOM_STEP)
 
     def actualSize_(self, sender) -> None:
-        self._setPageZoom(1.0)
+        self.set_page_zoom(1.0)
 
     def cutCell_(self, sender) -> None:
         self._dispatch_notebook_action(b"cutCell:", sender)
