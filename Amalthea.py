@@ -73,6 +73,8 @@ WINDOW_STYLE_MASK = (
 SAGE_LOCATION = "/usr/local/bin/sage"
 WINDOW_DEFAULTS_KEY = "Anteprandium.Amalthea.MainWindowSize"
 PAGE_ZOOM_DEFAULTS_KEY = "Anteprandium.Amalthea.PageZoom"
+RECENT_NOTEBOOKS_DEFAULTS_KEY = "Anteprandium.Amalthea.RecentNotebooks"
+MAX_RECENT_NOTEBOOKS = 10
 PAGE_ZOOM_DEFAULT = 1.15
 PAGE_ZOOM_MIN = 0.8
 PAGE_ZOOM_MAX = 1.6
@@ -898,6 +900,7 @@ class NotebookWindow(NSObject):
 class Amalthea(NSObject):
     documents = objc.ivar()
     pending_files = objc.ivar()
+    recent_menu = objc.ivar()
     server = objc.ivar()
 
     def init(self):
@@ -906,6 +909,7 @@ class Amalthea(NSObject):
             return None
         self.documents = NSMutableArray.array()
         self.pending_files = NSMutableArray.array()
+        self.recent_menu = None
         self.server = None
         return self
 
@@ -1004,12 +1008,70 @@ class Amalthea(NSObject):
             return visible_notebooks[-1]
         return None
 
+    def activeNotebookPath(self) -> str | None:
+        notebook = self.activeNotebook()
+        if notebook is None or notebook.window is None:
+            return None
+        filename = notebook.window.representedFilename()
+        return str(filename) if filename else None
+
     def _dispatch_notebook_action(self, selector: bytes, sender) -> None:
         notebook = self.activeNotebook()
         if notebook is None:
             NSBeep()
             return
         notebook.performSelector_withObject_(selector, sender)
+
+    def _recent_notebook_paths(self) -> list[str]:
+        defaults = NSUserDefaults.standardUserDefaults()
+        stored = defaults.arrayForKey_(RECENT_NOTEBOOKS_DEFAULTS_KEY) or []
+        paths: list[str] = []
+        seen: set[str] = set()
+        for item in stored:
+            path = normalise(str(item))
+            if path in seen or not looks_like_notebook(path) or not os.path.exists(path):
+                continue
+            seen.add(path)
+            paths.append(path)
+        return paths[:MAX_RECENT_NOTEBOOKS]
+
+    def _save_recent_notebook_paths(self, paths: list[str]) -> None:
+        NSUserDefaults.standardUserDefaults().setObject_forKey_(
+            paths[:MAX_RECENT_NOTEBOOKS], RECENT_NOTEBOOKS_DEFAULTS_KEY
+        )
+
+    def _note_recent_notebook(self, filename: str) -> None:
+        path = normalise(filename)
+        paths = [candidate for candidate in self._recent_notebook_paths() if candidate != path]
+        paths.insert(0, path)
+        self._save_recent_notebook_paths(paths)
+        self.rebuildOpenRecentMenu()
+
+    def rebuildOpenRecentMenu(self) -> None:
+        if self.recent_menu is None:
+            return
+        self.recent_menu.removeAllItems()
+        paths = self._recent_notebook_paths()
+        if not paths:
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                "No Recent Notebooks", None, ""
+            )
+            item.setEnabled_(False)
+            self.recent_menu.addItem_(item)
+            return
+
+        for path in paths:
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                Path(path).name, b"openRecentNotebook:", ""
+            )
+            item.setTarget_(self)
+            item.setRepresentedObject_(path)
+            item.setToolTip_(path)
+            self.recent_menu.addItem_(item)
+        self.recent_menu.addItem_(NSMenuItem.separatorItem())
+        self.addMenuItem_title_action_key_modifiers_target_(
+            self.recent_menu, "Clear Menu", b"clearRecentNotebooks:", "", 0, self
+        )
 
     def openFile_(self, filename: str | None):
         if not self.server or not self.server.url:
@@ -1024,6 +1086,7 @@ class Amalthea(NSObject):
             notebook = self.createNotebookWindow()
             notebook.loadURL_filePath_(url, normalise(filename))
             notebook.show()
+            self._note_recent_notebook(filename)
             return notebook
         if filename:
             alert(
@@ -1064,8 +1127,26 @@ class Amalthea(NSObject):
     def openDocument_(self, sender) -> None:
         self.selectFile()
 
+    def openRecentNotebook_(self, sender) -> None:
+        path = sender.representedObject() if sender is not None else None
+        if path:
+            self.openFile_(str(path))
+
+    def clearRecentNotebooks_(self, sender) -> None:
+        self._save_recent_notebook_paths([])
+        self.rebuildOpenRecentMenu()
+
     def newDocument_(self, sender) -> None:
         self.newFile()
+
+    def revealInFinder_(self, sender) -> None:
+        path = self.activeNotebookPath()
+        if not path:
+            NSBeep()
+            return
+        NSWorkspace.sharedWorkspace().activateFileViewerSelectingURLs_(
+            [NSURL.fileURLWithPath_(path)]
+        )
 
     def saveDocument_(self, sender) -> None:
         self._dispatch_notebook_action(b"saveDocument:", sender)
@@ -1199,6 +1280,13 @@ class Amalthea(NSObject):
         self.addMenuItem_title_action_key_modifiers_target_(
             file_menu, "Open", b"openDocument:", "o", NSEventModifierFlagCommand, self
         )
+        open_recent_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+            "Open Recent", None, ""
+        )
+        self.recent_menu = NSMenu.alloc().initWithTitle_("Open Recent")
+        open_recent_item.setSubmenu_(self.recent_menu)
+        file_menu.addItem_(open_recent_item)
+        self.rebuildOpenRecentMenu()
         self.addMenuItem_title_action_key_modifiers_target_(
             file_menu, "Close", b"performClose:", "w", NSEventModifierFlagCommand, None
         )
@@ -1207,6 +1295,9 @@ class Amalthea(NSObject):
         )
         self.addMenuItem_title_action_key_modifiers_target_(
             file_menu, "Save", b"saveDocument:", "s", NSEventModifierFlagCommand, self
+        )
+        self.addMenuItem_title_action_key_modifiers_target_(
+            file_menu, "Reveal in Finder", b"revealInFinder:", "", 0, self
         )
 
         edit_menu = self.addTopLevelMenu_title_(main_menu, "Edit")
